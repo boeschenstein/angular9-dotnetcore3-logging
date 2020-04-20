@@ -2,7 +2,9 @@
 
 ## Goal
 
-Activate and use logging of .NET Core. Implement and configure 3rd party logging (Serilog).
+Activate and use logging of .NET Core. Implement and configure 3rd party logging (Serilog). 
+
+>Although .NET Core knows about logging (ILogger), it has no built-in file logger.
 
 Before you start, you should get some basic understanding of the configuration mechanics in ASP.NET Core: <https://github.com/boeschenstein/aspnetcore3_configuration>
 
@@ -27,7 +29,7 @@ Alternatively you can clone my sample from here: <https://github.com/boeschenste
 
 ### .NET Core is prepared for logging
 
-Unlike the old .NET versions, .NET Core is prepared for logging. It comes with some interfaces like ILogger\<T>. Here an example from `\WebApplication1\WebApplication1\Controllers\WeatherForecastController.cs`, where the logger gets [injected](https://github.com/boeschenstein/definition/tree/master#dependency-injection) in the constructor:
+Unlike the old .NET versions, .NET Core is prepared for logging. It comes with some interfaces like ILogger\<T>. Here an example from `\WebApplication1\WebApplication1\Controllers\WeatherForecastController.cs`, where the logger gets [injected](https://github.com/boeschenstein/definition#dependency-injection) in the constructor:
 
 ``` c#
 public WeatherForecastController(ILogger<WeatherForecastController> logger)
