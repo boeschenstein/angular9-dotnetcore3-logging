@@ -27,7 +27,7 @@ Alternatively you can clone my sample from here: <https://github.com/boeschenste
 
 ### .NET Core is prepared for logging
 
-Unless the old .NET versions, .NET Core is prepared for logging. It comes with some interfaces like ILogger\<T>. Here an example from `\WebApplication1\WebApplication1\Controllers\WeatherForecastController.cs`, where the logger gets [injected](https://github.com/boeschenstein/definition/tree/master#dependency-injection) in the constructor:
+Unlike the old .NET versions, .NET Core is prepared for logging. It comes with some interfaces like ILogger\<T>. Here an example from `\WebApplication1\WebApplication1\Controllers\WeatherForecastController.cs`, where the logger gets [injected](https://github.com/boeschenstein/definition/tree/master#dependency-injection) in the constructor:
 
 ``` c#
 public WeatherForecastController(ILogger<WeatherForecastController> logger)
@@ -96,7 +96,7 @@ public static int Main(string[] args)
 ```
 
 <details>
-  <summary>To log any startup errors, replace Main() in `Main.cs`:</summary>
+  <summary>To log any startup errors, add a try-catch in `Main.cs`:</summary>
 
 ``` c#
 using Serilog;
@@ -154,7 +154,7 @@ When you start the application, you see the log file in this folder: `\<your_web
 
 ### Install Serilog
 
-Open cmd in the folder with the project file (.csproj) file.
+Open cmd in the folder with the project file (.csproj) file and add the following libraries:
 
 ``` cmd
 dotnet add package Serilog.AspNetCore
@@ -163,7 +163,7 @@ dotnet add package Serilog.Sinks.File
 
 ### Load Configuration from appsettings.config
 
-in `program.cs`, add this to the CreateDefaultBuilder call:
+In `program.cs`, add this to the CreateDefaultBuilder call:
 
 ``` c#
     .UseSerilog((hostingContext, loggerConfiguration) => loggerConfiguration
@@ -176,7 +176,7 @@ in `program.cs`, add this to the CreateDefaultBuilder call:
 ```
 
 <details>
-  <summary>To log any errors to a log file - configured by application.json - use this `Main.cs`:</summary>
+  <summary>Here you can find the complete code of `program.cs`:</summary>
 
 ```c#
 using Microsoft.AspNetCore.Hosting;
@@ -234,7 +234,7 @@ This is the complete appsettings.json for Serilog with rolling file:
       {
         "Name": "File",
         "Args": {
-          "path": "logs\\myapplication.log",
+          "path": "logs\\myApplication.log",
           "rollingInterval": "Day"
         }
       }
@@ -244,12 +244,25 @@ This is the complete appsettings.json for Serilog with rolling file:
 }
 ```
 
+Run the application and you will see the log file here `\<your_webapi_project>\logs\myApplication20200420.txt`
+
 ### Pros/Cons of this approach
 
 - Con: no Early initialization: Application startup log is not included.
 - Pro: The logger is configured in appsettings.json.
 
-### Example 3: Early Initialization and config in appsettings.json
+## Example 3: Early Initialization and config in appsettings.json
+
+### Install Serilog
+
+Open cmd in the folder with the project file (.csproj) file and add the following libraries:
+
+``` cmd
+dotnet add package Serilog.AspNetCore
+dotnet add package Serilog.Sinks.File
+```
+
+### Early initialization and Load Configuration from appsettings.config
 
 ``` c#
 public class Program
@@ -286,6 +299,27 @@ public class Program
 
 [Here](https://github.com/serilog/serilog-aspnetcore/blob/dev/samples/EarlyInitializationSample/Program.cs) is the complete source. It adds try-cast around the run() function;
 
+### Serilog config in appsettings.json
+
+Serilog does not need this "Logging" section, this is the complete appsettings.json for Serilog with rolling file:
+
+``` json
+{
+  "Serilog": {
+    "WriteTo": [
+      {
+        "Name": "File",
+        "Args": {
+          "path": "logs\\myApplication.log",
+          "rollingInterval": "Day"
+        }
+      }
+    ]
+  },
+  "AllowedHosts": "*"
+}
+```
+
 Run the application and you will see the log file here `\<your_webapi_project>\logs\myApplication20200420.txt`
 
 ### Pros/Cons of this approach
@@ -306,14 +340,10 @@ public void Configure(IApplicationBuilder app, IHostingEnvironment env)
     {
         app.UseDeveloperExceptionPage();
     }
-    else
-    {
-        app.UseExceptionHandler("/Home/Error");
-    }
 
     app.UseSerilogRequestLogging(); // <-- Add this line
 
-    // Other app configuration
+    // ... add other app configuration below this ...
 ```
 
 ## Serilog Packages
