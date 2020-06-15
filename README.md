@@ -1,5 +1,32 @@
 # Add Logging to .NET Core 3.1 WebApi
 
+## Content
+
+- [Add Logging to .NET Core 3.1 WebApi](#add-logging-to-net-core-31-webapi)
+  - [Content](#content)
+  - [Goal](#goal)
+  - [What you should bring](#what-you-should-bring)
+  - [About Logging](#about-logging)
+  - [Use Logging in ASP.NET Core projects](#use-logging-in-aspnet-core-projects)
+    - [Get a .NET WebAPI project](#get-a-net-webapi-project)
+    - [.NET Core is prepared for logging](#net-core-is-prepared-for-logging)
+  - [Example 1: Serilog: Basic Implementation without settings in appsettings.json](#example-1-serilog-basic-implementation-without-settings-in-appsettingsjson)
+    - [Install Serilog](#install-serilog)
+    - [Config and implement Serilog](#config-and-implement-serilog)
+    - [Activate Serilog](#activate-serilog)
+    - [Load Configuration from appsettings.config](#load-configuration-from-appsettingsconfig)
+    - [Serilog config in appsettings.json](#serilog-config-in-appsettingsjson)
+    - [Pros/Cons of this approach](#proscons-of-this-approach)
+  - [Example 3: Early Initialization and config in appsettings.json](#example-3-early-initialization-and-config-in-appsettingsjson)
+    - [Install Serilog](#install-serilog-1)
+    - [Early initialization and Load Configuration from appsettings.config](#early-initialization-and-load-configuration-from-appsettingsconfig)
+    - [Pros/Cons of this approach](#proscons-of-this-approach-1)
+  - [Request Logging](#request-logging)
+  - [What's next](#whats-next)
+  - [Additional Information](#additional-information)
+    - [Links](#links)
+    - [Current Versions](#current-versions)
+
 ## Goal
 
 Activate and use logging of .NET Core. Implement and configure 3rd party logging (Serilog). 
@@ -17,9 +44,16 @@ Some basic understanding of
 - npm, node
 - Web technology
 
+## About Logging
+
+- You have to be familiar with "Development" environment settings (appsettings.json vs. appsettings.Development.json)
+- If you have additional appsettings.json/appsettings.Development.json in subsequent assemblies, they will overwrite the main/entry settings
+- If you call others than dll (WebApi), new setup and settings (NLog,SeriLog, ILogger) are needed
+- Im theory, you can mix both: _logger.LogInformation (ILogger) or native functions (_nlog.Info or serilog). But then you should to keep the minimum severity level (appsettings.json vs. nlog.config or serilog config) in sync
+
 ## Use Logging in ASP.NET Core projects
 
-## Get a .NET WebAPI project
+### Get a .NET WebAPI project
 
 Use your own .NET Core 3.1 WebApi backend.
 
@@ -363,6 +397,116 @@ public void Configure(IApplicationBuilder app, IHostingEnvironment env)
 | Microsoft.Extensions.Configuration      |                                   |                                     |                                                             |
 | Microsoft.Extensions.Configuration.Json |                                   |                                     |                                                             |
 
+## NLog
+
+Source: `https://github.com/NLog/NLog/wiki/Getting-started-with-.NET-Core-2---Console-application`
+
+Add `nlog.config` file to the entry project:
+
+```xml
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- XSD manual extracted from package NLog.Schema: https://www.nuget.org/packages/NLog.Schema-->
+<nlog xmlns="http://www.nlog-project.org/schemas/NLog.xsd" xsi:schemaLocation="NLog NLog.xsd"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      autoReload="true"
+      internalLogFile="c:\temp\console-example-internal.log"
+      internalLogLevel="Info" >
+  <targets>
+    <target xsi:type="File" name="target1" fileName="console-example-${shortdate}.log"
+            layout="${longdate}|${event-properties:item=EventId_Id}|${level:uppercase=true}|${message} ${exception}|${logger}|${all-event-properties}" />
+    <target xsi:type="Console" name="target2"
+            layout="${date}|${level:uppercase=true}|${message} ${exception}|${logger}|${all-event-properties}" />
+  </targets>
+  <rules>
+    <logger name="*" minlevel="Trace" writeTo="target1,target2" />
+  </rules>
+</nlog>
+```
+
+Use the logger:
+
+```c#
+// Constructor Dependency Injection
+public Tester(ILogger<Tester> logger)
+{
+    // .NET Core ILogger<T>
+    logger.LogInformation("Hello from Tester - .NET Core ILogger<T>");
+
+    // Native NLog logger (no DI needed - nice for simpler unit testing)
+    Logger log = LogManager.GetCurrentClassLogger();
+    log.Info("Hello from Tester - NLog native");
+}
+```
+
+### Implement NLog in Console
+
+Add NLog
+
+```cmd
+install-package NLog
+```
+
+Load nlog config file:
+
+```c#
+serviceCollection.AddLogging(builder =>
+{
+    builder.SetMinimumLevel(LogLevel.Information); // this is the Default if you set "Default" in appsettings.json
+    builder.AddNLog("nlog.config");
+});
+```
+
+### Implement NLog in ASP.NET Core 3
+
+Add NLog
+
+```cmd
+install-package NLog.Web.AspNetCore
+install-package NLog
+```
+
+Use this program class
+
+```c#
+public class Program
+{
+    public static void Main(string[] args)
+    {
+        var logger = NLog.Web.NLogBuilder.ConfigureNLog("nlog.config").GetCurrentClassLogger();
+
+        try
+        {
+            logger.Debug("init main");
+            CreateHostBuilder(args).Build().Run();
+        }
+        catch (Exception ex)
+        {
+            //NLog: catch setup errors
+            logger.Error(ex, "Stopped program because of exception");
+            throw;
+        }
+        finally
+        {
+            // Ensure to flush and stop internal timers/threads before application-exit (Avoid segmentation fault on Linux)
+            NLog.LogManager.Shutdown();
+        }
+    }
+
+    public static IHostBuilder CreateHostBuilder(string[] args) =>
+        Host.CreateDefaultBuilder(args)
+            .ConfigureWebHostDefaults(webBuilder =>
+                {
+                    webBuilder.UseStartup<Startup>();
+                })
+            .ConfigureLogging(logging =>
+                {
+                    logging.ClearProviders();
+                    logging.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Trace); // this is the Default if you set "Default" in appsettings.json
+                })
+            .UseNLog();  // NLog: Setup NLog for Dependency injection;
+}
+```
+
 ## What's next
 
 Swagger/OpenApi are tools which can create your Angular code to access the backend: check this <https://github.com/boeschenstein/angular9-dotnetcore-openapi-swagger>
@@ -374,8 +518,12 @@ Swagger/OpenApi are tools which can create your Angular code to access the backe
 - .NET Core configuration: <https://github.com/boeschenstein/aspnetcore3_configuration>
 - .NET Core logging: <https://docs.microsoft.com/en-us/aspnet/core/fundamentals/logging/?view=aspnetcore-3.1>
 - Third-party logging providers: <https://docs.microsoft.com/en-us/aspnet/core/fundamentals/logging/?view=aspnetcore-3.1#third-party-logging-providers>
-- Serilog: <https://github.com/serilog/serilog-aspnetcore>
-- Setting up Serilog in ASP.NET Core 3: <https://nblumhardt.com/2019/10/serilog-in-aspnetcore-3/>
+- Serilog
+  - <https://github.com/serilog/serilog-aspnetcore>
+  - Setting up Serilog in ASP.NET Core 3: <https://nblumhardt.com/2019/10/serilog-in-aspnetcore-3/>
+- NLog
+  - .NET Core Console: https://github.com/NLog/NLog/wiki/Getting-started-with-.NET-Core-2---Console-application
+  - ASP.NET Core 3: <https://github.com/NLog/NLog/wiki/Getting-started-with-ASP.NET-Core-3>
 - Log levels: <https://docs.microsoft.com/en-us/dotnet/api/microsoft.extensions.logging.loglevel>
 - Generic Host builder (Core 3) replaces Web Host Builder (Core 2): <https://docs.microsoft.com/en-us/aspnet/core/fundamentals/host/web-host?view=aspnetcore-3.1>
 - ASP.NET WebApi: <https://docs.microsoft.com/en-us/aspnet/core/tutorials/first-web-api?view=aspnetcore-3.1&tabs=visual-studio>
