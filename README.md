@@ -10,18 +10,28 @@
   - [Use Logging in ASP.NET Core projects](#use-logging-in-aspnet-core-projects)
     - [Get a .NET WebAPI project](#get-a-net-webapi-project)
     - [.NET Core is prepared for logging](#net-core-is-prepared-for-logging)
-  - [Example 1: Serilog: Basic Implementation without settings in appsettings.json](#example-1-serilog-basic-implementation-without-settings-in-appsettingsjson)
-    - [Install Serilog](#install-serilog)
-    - [Config and implement Serilog](#config-and-implement-serilog)
-    - [Activate Serilog](#activate-serilog)
-    - [Load Configuration from appsettings.config](#load-configuration-from-appsettingsconfig)
-    - [Serilog config in appsettings.json](#serilog-config-in-appsettingsjson)
-    - [Pros/Cons of this approach](#proscons-of-this-approach)
-  - [Example 3: Early Initialization and config in appsettings.json](#example-3-early-initialization-and-config-in-appsettingsjson)
-    - [Install Serilog](#install-serilog-1)
-    - [Early initialization and Load Configuration from appsettings.config](#early-initialization-and-load-configuration-from-appsettingsconfig)
-    - [Pros/Cons of this approach](#proscons-of-this-approach-1)
-  - [Request Logging](#request-logging)
+    - [Global Error Handling (Middleware)](#global-error-handling-middleware)
+  - [Serilog](#serilog)
+    - [Example 1: Serilog: Basic Implementation without settings in appsettings.json](#example-1-serilog-basic-implementation-without-settings-in-appsettingsjson)
+      - [Install Serilog (Example 1)](#install-serilog-example-1)
+      - [Config and implement Serilog (Example 1)](#config-and-implement-serilog-example-1)
+      - [Activate Serilog (Example 1)](#activate-serilog-example-1)
+      - [Pros/Cons of this approach (Example 1)](#proscons-of-this-approach-example-1)
+    - [Example 2: Serilog: Basic Implementation with appsettings.json](#example-2-serilog-basic-implementation-with-appsettingsjson)
+      - [Install Serilog (Example 2)](#install-serilog-example-2)
+      - [Load Configuration from appsettings.config (Example 2)](#load-configuration-from-appsettingsconfig-example-2)
+      - [Serilog config in appsettings.json (Example 2)](#serilog-config-in-appsettingsjson-example-2)
+      - [Pros/Cons of this approach (Example 2)](#proscons-of-this-approach-example-2)
+    - [Example 3: Early Initialization and config in appsettings.json](#example-3-early-initialization-and-config-in-appsettingsjson)
+      - [Install Serilog (Example 3)](#install-serilog-example-3)
+      - [Early initialization and Load Configuration from appsettings.config](#early-initialization-and-load-configuration-from-appsettingsconfig)
+      - [Serilog config in appsettings.json (Example 3)](#serilog-config-in-appsettingsjson-example-3)
+      - [Pros/Cons of this approach (Example 3)](#proscons-of-this-approach-example-3)
+    - [Request Logging](#request-logging)
+    - [Serilog Packages](#serilog-packages)
+  - [NLog](#nlog)
+    - [Implement NLog in Console](#implement-nlog-in-console)
+    - [Implement NLog in ASP.NET Core 3](#implement-nlog-in-aspnet-core-3)
   - [What's next](#whats-next)
   - [Additional Information](#additional-information)
     - [Links](#links)
@@ -65,7 +75,7 @@ Alternatively you can clone my sample from here: <https://github.com/boeschenste
 
 Unlike the old .NET versions, .NET Core is prepared for logging. It comes with some interfaces like ILogger\<T>. Here an example from `\WebApplication1\WebApplication1\Controllers\WeatherForecastController.cs`, where the logger gets [injected](https://github.com/boeschenstein/definition#dependency-injection) in the constructor:
 
-``` c#
+```cs
 public WeatherForecastController(ILogger<WeatherForecastController> logger)
 {
     _logger = logger;
@@ -74,7 +84,7 @@ public WeatherForecastController(ILogger<WeatherForecastController> logger)
 
 Write some Log in your application...
 
-``` c#
+```cs
 [HttpGet]
 public IEnumerable<WeatherForecast> Get()
 {
@@ -100,9 +110,80 @@ MyBackend.Controllers.WeatherForecastController: Critical: Get() was called! (cr
 ...
 ```
 
-## Example 1: Serilog: Basic Implementation without settings in appsettings.json
+### Global Error Handling (Middleware)
 
-### Install Serilog
+```cs
+public class ErrorHandling
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger _logger;
+
+    public ErrorHandling(RequestDelegate next, ILogger<ErrorHandling> logger)
+    {
+        _next = next;
+        _logger = logger;
+    }
+
+    public async Task Invoke(HttpContext httpContext)
+    {
+        try
+        {
+            // log for development purpose
+            _logger.LogInformation($"Request: To:{httpContext.Request.Path} Method:{httpContext.Request.Method}");
+            await _next(httpContext);
+        }
+        // wrong methods called within the core, not to blame to the client
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogError(ex, $"Invalid Operation! {ex.Message}");
+
+            httpContext.Response.Clear();
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            httpContext.Response.ContentType = "application/json";
+            await httpContext.Response.WriteAsync(JsonConvert.SerializeObject(ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogError(ex, $"Invalid Argument! {ex.Message}");
+
+            httpContext.Response.Clear();
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            httpContext.Response.ContentType = "application/json";
+            await httpContext.Response.WriteAsync(JsonConvert.SerializeObject(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Exception! {ex.Message}");
+
+            if (httpContext.Response.HasStarted)
+            {
+                _logger.LogWarning("The response has already started, the http status code middleware will not be executed.");
+                throw;
+            }
+
+            httpContext.Response.Clear();
+            httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            httpContext.Response.ContentType = "application/json";
+            await httpContext.Response.WriteAsync(JsonConvert.SerializeObject(ex.Message));
+        }
+    }
+}
+
+// Extension method used to add the middleware to the HTTP request pipeline.
+public static class ExceptionHandlingExtensions
+{
+    public static IApplicationBuilder UseCustomExceptionHandling(this IApplicationBuilder builder)
+    {
+        return builder.UseMiddleware<ErrorHandling>();
+    }
+}
+```
+
+## Serilog
+
+### Example 1: Serilog: Basic Implementation without settings in appsettings.json
+
+#### Install Serilog (Example 1)
 
 Open cmd in the folder with the project file (.csproj) file.
 
@@ -111,11 +192,11 @@ dotnet add package Serilog.AspNetCore
 dotnet add package Serilog.Sinks.File
 ```
 
-### Config and implement Serilog
+#### Config and implement Serilog (Example 1)
 
 Add a basic Logger (Serilog) configuration:
 
-``` c#
+```cs
 using Serilog;
 
 public static int Main(string[] args)
@@ -134,7 +215,7 @@ public static int Main(string[] args)
 <details>
   <summary>To log any startup errors, add a try-catch in `Main.cs`:</summary>
 
-``` c#
+```cs
 using Serilog;
 using Serilog.Events;
 
@@ -166,42 +247,42 @@ public static int Main(string[] args)
 
 </details>
 
-### Activate Serilog
+#### Activate Serilog (Example 1)
 
 Add the last line in CreateHostBuilder() in `Main.cs`:
 
-``` c#
+```cs
 public static IHostBuilder CreateHostBuilder(string[] args) =>
-    Host.
-    ...
-    .UseSerilog(); // <-- Serilog: add this line
+    Host
+    // ...
+    .UseSerilog(); // Serilog: add this line
 ```
 
 When you start the application, you see the log file in this folder: `\<your_webapi_project>\logs\log20200420.txt`
 
-### Pros/Cons of this approach
+#### Pros/Cons of this approach (Example 1)
 
 - Pro: Early initialization: Application startup log is included.
 - Con: The logger is not configured in appsettings.json.
 
-## Example 2: Serilog: Basic Implementation with appsettings.json
+### Example 2: Serilog: Basic Implementation with appsettings.json
 
-<https://github.com/serilog/serilog-aspnetcore/tree/dev/samples/InlineInitializationSample>
+[InlineInitializationSample](https://github.com/serilog/serilog-aspnetcore/tree/dev/samples/InlineInitializationSample)
 
-### Install Serilog
+#### Install Serilog (Example 2)
 
 Open cmd in the folder with the project file (.csproj) file and add the following libraries:
 
-``` cmd
+```cmd
 dotnet add package Serilog.AspNetCore
 dotnet add package Serilog.Sinks.File
 ```
 
-### Load Configuration from appsettings.config
+#### Load Configuration from appsettings.config (Example 2)
 
 In `program.cs`, add this to the CreateDefaultBuilder call:
 
-``` c#
+```cs
     .UseSerilog((hostingContext, loggerConfiguration) => loggerConfiguration
         .ReadFrom.Configuration(hostingContext.Configuration)
         .Enrich.FromLogContext()
@@ -214,7 +295,7 @@ In `program.cs`, add this to the CreateDefaultBuilder call:
 <details>
   <summary>Here you can find the complete code of `program.cs`:</summary>
 
-```c#
+```cs
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting;
 using Serilog;
@@ -247,7 +328,7 @@ namespace MyBackend
 
 </details>
 
-### Serilog config in appsettings.json
+#### Serilog config in appsettings.json (Example 2)
 
 Serilog does not need this "Logging" section, you can delete this:
 
@@ -282,14 +363,14 @@ This is the complete appsettings.json for Serilog with rolling file:
 
 Run the application and you will see the log file here `\<your_webapi_project>\logs\myApplication20200420.txt`
 
-### Pros/Cons of this approach
+#### Pros/Cons of this approach (Example 2)
 
 - Con: no Early initialization: Application startup log is not included.
 - Pro: The logger is configured in appsettings.json.
 
-## Example 3: Early Initialization and config in appsettings.json
+### Example 3: Early Initialization and config in appsettings.json
 
-### Install Serilog
+#### Install Serilog (Example 3)
 
 Open cmd in the folder with the project file (.csproj) file and add the following libraries:
 
@@ -298,9 +379,9 @@ dotnet add package Serilog.AspNetCore
 dotnet add package Serilog.Sinks.File
 ```
 
-### Early initialization and Load Configuration from appsettings.config
+#### Early initialization and Load Configuration from appsettings.config
 
-``` c#
+```cs
 public class Program
 {
     // source: https://github.com/serilog/serilog-aspnetcore/blob/dev/samples/EarlyInitializationSample/Program.cs
@@ -335,7 +416,7 @@ public class Program
 
 [Here](https://github.com/serilog/serilog-aspnetcore/blob/dev/samples/EarlyInitializationSample/Program.cs) is the complete source. It adds try-cast around the run() function;
 
-### Serilog config in appsettings.json
+#### Serilog config in appsettings.json (Example 3)
 
 Serilog does not need this "Logging" section, this is the complete appsettings.json for Serilog with rolling file:
 
@@ -358,18 +439,18 @@ Serilog does not need this "Logging" section, this is the complete appsettings.j
 
 Run the application and you will see the log file here `\<your_webapi_project>\logs\myApplication20200420.txt`
 
-### Pros/Cons of this approach
+#### Pros/Cons of this approach (Example 3)
 
 - Con: not very obvious/consistent.
 - Con: manually rebuild initialization order and logic of CreateDefaultBuilder
 - Pro: The logger is configured in appsettings.json.
 - Pro: Early initialization: Application startup log is included.
 
-## Request Logging
+### Request Logging
 
 To add request logging, call UseSerilogRequestLogging():
 
-``` c#
+```cs
 public void Configure(IApplicationBuilder app, IHostingEnvironment env)
 {
     if (env.IsDevelopment())
@@ -382,7 +463,7 @@ public void Configure(IApplicationBuilder app, IHostingEnvironment env)
     // ... add other app configuration below this ...
 ```
 
-## Serilog Packages
+### Serilog Packages
 
 | Package                                 | Function                          | Status                              | GitHub                                                      |
 | --------------------------------------- | --------------------------------- | ----------------------------------- | ----------------------------------------------------------- |
@@ -425,7 +506,7 @@ Add `nlog.config` file to the entry project:
 
 Use the logger:
 
-```c#
+```cs
 // Constructor Dependency Injection
 public Tester(ILogger<Tester> logger)
 {
@@ -448,7 +529,7 @@ install-package NLog
 
 Load nlog config file:
 
-```c#
+```cs
 serviceCollection.AddLogging(builder =>
 {
     builder.SetMinimumLevel(LogLevel.Information); // this is the Default if you set "Default" in appsettings.json
@@ -467,7 +548,7 @@ install-package NLog
 
 Use this program class
 
-```c#
+```cs
 public class Program
 {
     public static void Main(string[] args)
