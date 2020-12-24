@@ -88,12 +88,13 @@ Write some Log in your application...
 [HttpGet]
 public IEnumerable<WeatherForecast> Get()
 {
-    _logger.LogTrace("Get() was called! (trace)");
+    // https://docs.microsoft.com/en-us/dotnet/api/microsoft.extensions.logging.loglevel?view=dotnet-plat-ext-5.0
+    _logger.LogTrace("Get() was called! (trace)"); // lowest prio, highest verbosity
     _logger.LogDebug("Get() was called! (debug)");
     _logger.LogInformation("Get() was called! (information)");
     _logger.LogWarning("Get() was called! (warning)");
     _logger.LogError("Get() was called! (error)");
-    _logger.LogCritical("Get() was called! (critical)");
+    _logger.LogCritical("Get() was called! (critical)"); // highest prio
     ...
 }
 ```
