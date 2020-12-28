@@ -589,6 +589,34 @@ public class Program
 }
 ```
 
+### Log a static class (ILoggerFactory available)
+
+```cs
+public static void CancelRunningJobsBeforeHangfireServerStarts(JobStorage currentJobStorage, ILoggerFactory loggerFactory)
+{
+    var logger = loggerFactory.CreateLogger($"{nameof(ApplicationConfiguration)}"); // use non-generic logger creator
+}
+```
+
+### Log from class without constructor injection (IServiceCollection available)
+
+```cs
+public NoMissedRunsAttribute(IServiceCollection services)
+{
+    _services = services;
+}
+
+public void OnCreating(CreatingContext filterContext)
+{
+    using (var loggerFactory = _services.BuildServiceProvider().GetService<ILoggerFactory>())
+    {
+        var logger = loggerFactory.CreateLogger<NoMissedRunsAttribute>();
+
+        logger.LogDebug($"Hangfire Filter OnCreating!");
+    }
+}
+```
+
 ## What's next
 
 Swagger/OpenApi are tools which can create your Angular code to access the backend: check this <https://github.com/boeschenstein/angular9-dotnetcore-openapi-swagger>
