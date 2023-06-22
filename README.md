@@ -464,6 +464,12 @@ public void Configure(IApplicationBuilder app, IHostingEnvironment env)
     // ... add other app configuration below this ...
 ```
 
+### Structured logging
+
+<https://github.com/serilog/serilog/wiki/Structured-Data>
+
+Fixes this issue: <https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/quality-rules/ca2254>
+
 ### Serilog Packages
 
 | Package                                 | Function                          | Status                              | GitHub                                                      |
